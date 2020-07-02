@@ -20,6 +20,7 @@ import com.rabbitmq.client.*;
 import com.rabbitmq.client.impl.recovery.AutorecoveringConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.BaseSubscriber;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
@@ -108,48 +109,57 @@ public class Receiver implements Closeable {
     }
 
     public Flux<Delivery> consumeNoAck(final String queue, ConsumeOptions options) {
-        return Flux.create(emitter -> connectionMono.map(CHANNEL_CREATION_FUNCTION).subscribe(channel -> {
-            try {
-                DeliverCallback deliverCallback = (consumerTag, message) -> {
-                    emitter.next(message);
-                    if (options.getStopConsumingBiFunction().apply(emitter.requestedFromDownstream(), message)) {
-                        emitter.complete();
-                    }
-                };
-                AtomicBoolean basicCancel = new AtomicBoolean(true);
-                CancelCallback cancelCallback = consumerTag -> {
-                    LOGGER.info("Flux consumer {} has been cancelled", consumerTag);
-                    basicCancel.set(false);
-                    emitter.complete();
-                };
-
-                completeOnChannelShutdown(channel, emitter);
-
-                final String consumerTag = channel.basicConsume(queue, true, options.getConsumerTag(), deliverCallback, cancelCallback);
-                AtomicBoolean cancelled = new AtomicBoolean(false);
-                LOGGER.info("Consumer {} consuming from {} has been registered", consumerTag, queue);
-                emitter.onDispose(() -> {
-                    LOGGER.info("Cancelling consumer {} consuming from {}", consumerTag, queue);
-                    if (cancelled.compareAndSet(false, true)) {
+        return Flux.create(emitter -> connectionMono.map(CHANNEL_CREATION_FUNCTION).subscribe(
+                new BaseSubscriber<Channel>() {
+                    @Override
+                    protected void hookOnNext(Channel channel) {
                         try {
-                            if (channel.isOpen() && channel.getConnection().isOpen()) {
-                                if (basicCancel.compareAndSet(true, false)) {
-                                    channel.basicCancel(consumerTag);
+                            DeliverCallback deliverCallback = (consumerTag, message) -> {
+                                emitter.next(message);
+                                if (options.getStopConsumingBiFunction().apply(emitter.requestedFromDownstream(), message)) {
+                                    emitter.complete();
                                 }
-                                channel.close();
-                            }
-                        } catch (TimeoutException | IOException e) {
-                            // Not sure what to do, not much we can do,
-                            // logging should be enough.
-                            // Maybe one good reason to introduce an exception handler to choose more easily.
-                            LOGGER.warn("Error while closing channel: " + e.getMessage());
+                            };
+                            AtomicBoolean basicCancel = new AtomicBoolean(true);
+                            CancelCallback cancelCallback = consumerTag -> {
+                                LOGGER.info("Flux consumer {} has been cancelled", consumerTag);
+                                basicCancel.set(false);
+                                emitter.complete();
+                            };
+
+                            completeOnChannelShutdown(channel, emitter);
+
+                            final String consumerTag = channel.basicConsume(queue, true, options.getConsumerTag(), deliverCallback, cancelCallback);
+                            AtomicBoolean cancelled = new AtomicBoolean(false);
+                            LOGGER.info("Consumer {} consuming from {} has been registered", consumerTag, queue);
+                            emitter.onDispose(() -> {
+                                LOGGER.info("Cancelling consumer {} consuming from {}", consumerTag, queue);
+                                if (cancelled.compareAndSet(false, true)) {
+                                    try {
+                                        if (channel.isOpen() && channel.getConnection().isOpen()) {
+                                            if (basicCancel.compareAndSet(true, false)) {
+                                                channel.basicCancel(consumerTag);
+                                            }
+                                            channel.close();
+                                        }
+                                    } catch (TimeoutException | IOException e) {
+                                        // Not sure what to do, not much we can do,
+                                        // logging should be enough.
+                                        // Maybe one good reason to introduce an exception handler to choose more easily.
+                                        LOGGER.warn("Error while closing channel: " + e.getMessage());
+                                    }
+                                }
+                            });
+                        } catch (IOException e) {
+                            throw new RabbitFluxException(e);
                         }
                     }
-                });
-            } catch (IOException e) {
-                throw new RabbitFluxException(e);
-            }
-        }, emitter::error), options.getOverflowStrategy());
+
+                    @Override
+                    protected void hookOnError(Throwable throwable) {
+                        emitter.error(throwable);
+                    }
+                }), options.getOverflowStrategy());
     }
 
     protected void completeOnChannelShutdown(Channel channel, FluxSink<?> emitter) {

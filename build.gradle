@@ -23,7 +23,7 @@ buildscript {
 	}
 }
 plugins {
-	id 'org.asciidoctor.convert' version '1.5.6'
+	id 'org.asciidoctor.convert'
 	id 'me.champeau.gradle.jmh' version '0.4.7'
 	id "com.jfrog.artifactory" version "4.9.8" apply false
 }
@@ -55,14 +55,6 @@ ext {
 					"https://rabbitmq.github.io/rabbitmq-java-client/api/current/",] as String[]
 }
 
-apply from: "$gradleScriptDir/doc.gradle"
-apply from: "$gradleScriptDir/releaser.gradle"
-
-configurations.all {
-	// check for snapshot updates every time
-	resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-}
-
 configure(allprojects) { project ->
 	group = 'io.projectreactor.rabbitmq'
 
@@ -77,7 +69,6 @@ configure(allprojects) { project ->
 	apply plugin: 'eclipse'
 	apply plugin: 'idea'
 	apply plugin: 'java'
-	apply from: "$gradleScriptDir/setup.gradle"
 
 	sourceCompatibility = targetCompatibility = 1.8
 
@@ -137,42 +128,5 @@ configure(rootProject) {
 	test {
 		useJUnitPlatform()
 		systemProperty 'rabbitmqctl.bin', System.getProperty('rabbitmqctl.bin') ?: 'sudo rabbitmqctl'
-	}
-
-	//add specific task artifacts to the publication
-	publishing.publications.mavenJava.artifact(docsZip)
-}
-
-project(':reactor-rabbitmq-samples') {
-	archivesBaseName = 'reactor-rabbitmq-samples'
-	description = 'Samples for Reactor RabbitMQ'
-
-	dependencies {
-		compile rootProject
-		runtime "ch.qos.logback:logback-classic:$logbackVersion"
-		implementation "org.springframework.boot:spring-boot-starter:$springBootVersion"
-		implementation "org.springframework.amqp:spring-rabbit:$springAmqpVersion"
-
-		testCompile rootProject.sourceSets.test.output
-		testRuntime "org.springframework.boot:spring-boot-starter-test:$springBootVersion"
-	}
-
-	task sender(type:JavaExec) {
-		main = 'reactor.rabbitmq.samples.SampleSender'
-		classpath = sourceSets.main.runtimeClasspath
-	}
-
-	task receiver(type:JavaExec) {
-		main = 'reactor.rabbitmq.samples.SampleReceiver'
-		classpath = sourceSets.main.runtimeClasspath
-	}
-
-	task springboot(type:JavaExec) {
-		main = 'reactor.rabbitmq.samples.SpringBootSample'
-		classpath = sourceSets.main.runtimeClasspath
-	}
-
-	test {
-		useJUnitPlatform()
 	}
 }
