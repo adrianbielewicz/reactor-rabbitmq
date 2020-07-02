@@ -21,6 +21,7 @@ import com.rabbitmq.client.impl.NetworkConnection;
 import com.rabbitmq.client.impl.recovery.AutorecoveringConnection;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -56,6 +57,7 @@ import static reactor.rabbitmq.RabbitFlux.createSender;
 /**
  *
  */
+@Disabled
 public class ConnectionRecoveryTests {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ConnectionRecoveryTests.class);
